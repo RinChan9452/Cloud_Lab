@@ -77,7 +77,10 @@ teach. **Do not put 3-tier content in the report.** Keep it to what was done in 
   instead of deleting old ones.
 - **Python:** run it with `PYTHONIOENCODING=utf-8` because the Thai filenames break the default cp1252 console. Don't
   use `python -I` for the tools scripts; it stops `report_lib` from being imported.
-- **File size:** screenshots are kept at full resolution, so the docx grows fast (~78 MB with Parts 1–4).
+- **File size:** screenshots are kept at full resolution, so the docx grows fast (~90 MB with Parts 1–4 and sections 13–14).
+- **Long photo filenames:** some of the user's filenames are so long that moving them into a section folder exceeds
+  the Windows 260-character path limit. Shorten just that filename (keep its number and meaning) and copy the full
+  original wording into the notes file.
 - **Viewing many screenshots:** image reads in a long session can come back empty. View 2–3 at a time and append
   the exact values (names, IDs, IPs, settings, errors) to a notes file in the scratchpad after each batch, then write
   the Part from the notes.
