@@ -19,7 +19,7 @@ add(P('Part 5 เป็นการเรียนรู้การปรับ
 add(BUL('**Auto Scaling** – สร้าง Launch template และ Auto Scaling group แล้วทดสอบว่าเมื่อเครื่องถูกลบ ระบบจะสร้างเครื่องใหม่แทนให้อัตโนมัติ'))
 add(BUL('**ELB & Auto scaling** – ทำ Web server ด้วย Docker และ Nginx บน Ubuntu สร้าง AMI แล้วให้ Auto Scaling group '
         'สร้างเครื่องหลัง Load Balancer และเพิ่ม/ลดจำนวนเครื่องตามการใช้ CPU'))
-add(BUL('**CloudWatch** – บริการติดตามและแจ้งเตือน'))
+add(BUL('**CloudWatch** – ดูค่า metric ของเครื่อง EC2 ตั้ง Alarm ให้ส่งอีเมลเมื่อ CPU สูงเกินกำหนด และสร้าง Dashboard'))
 add(BOX('**ก่อนเริ่ม:** ทุกขั้นตอนทำใน Region **United States (N. Virginia) us-east-1** และใช้ Key pair **MyKPuseast2** '
         'กับ Security Group **MySGuseast2** จาก Part 1 ถ้ายังมี Load Balancer myLB, Target group myTG หรือ Launch template ชื่อ myLT '
         'จาก Part ก่อน ให้ลบก่อน เพราะแลปนี้ใช้ชื่อเดิม'))
@@ -331,6 +331,121 @@ add(BUL('ถ้าไม่ใช้แล้ว ลบ Inbound rule SSH ออ�
 # 15. CloudWatch (no photos yet)
 # =====================================================================
 add(H('15. CloudWatch'))
+add(SUB('วัตถุประสงค์'))
+add(P('**Amazon CloudWatch** คือบริการติดตามการทำงาน (Monitoring) ของ AWS เก็บค่าตัวเลขของทรัพยากร (**Metrics**) เช่น การใช้ CPU, '
+      'ปริมาณข้อมูลเข้า-ออกเครือข่าย, การอ่าน-เขียนดิสก์ ของ EC2 ทุกเครื่องโดยอัตโนมัติ (ค่าเริ่มต้นเก็บทุก 5 นาที) '
+      'เราใช้ CloudWatch ทำได้ 3 อย่างหลักในหัวข้อนี้'))
+add(BUL('**Metrics** – ดูค่าและกราฟของ metric ย้อนหลัง'))
+add(BUL('**Alarms** – ตั้งเงื่อนไข เช่น CPU เกินค่าที่กำหนด แล้วให้ส่งอีเมลแจ้งเตือนผ่าน **Amazon SNS (Simple Notification Service)**'))
+add(BUL('**Dashboards** – รวมกราฟหลายตัวไว้ในหน้าเดียว เพื่อดูสถานะของระบบได้ทันที'))
+add(BOX('**ความเชื่อมโยงกับหัวข้อที่ 14:** Target tracking scaling policy ของ Auto Scaling ก็ทำงานผ่าน CloudWatch alarm '
+        '(TargetTracking-myASG-AlarmHigh-...) ที่ AWS สร้างให้อัตโนมัติ ในหัวข้อนี้เราจะสร้าง Alarm เองด้วยมือ'))
+add(TABLE(['ทรัพยากร', 'ชื่อ', 'ค่าที่ใช้'],
+          [['EC2 ที่ติดตาม', 'i-0a5e590df3ec102c8', 'm7i-flex.large, us-east-1c, Public IP 174.129.187.183'],
+           ['SNS topic', 'Web_Server_Overloading', 'ส่งอีเมลไปยังอีเมลของเรา'],
+           ['Alarm', 'myAlarm', 'CPUUtilization (Average, 5 นาที) > 0.1'],
+           ['Dashboard', 'SOC', 'CPUUtilization (Line), NetworkIn และ NetworkOut (Number)']],
+          [2200, 2600, 4200]))
+
+add(SUB('ส่วน A: ดู Metrics ของเครื่อง EC2'))
+add(STEP('15.1', 'พิมพ์ **CloudWatch** ในช่อง Search แล้วเลือกบริการ CloudWatch จะเข้าสู่หน้า **Overview** '
+                 'ซึ่งตอนนี้ยังไม่มี alarm, metric หรือ dashboard ที่ตั้งไว้ เมนูด้านซ้ายมี Dashboards, Alarms และ Metrics ที่จะใช้ในหัวข้อนี้'))
+add(IMG(photo('54'), 'รูปที่ 15.1 หน้า Overview ของ CloudWatch'))
+add(STEP('15.2', 'สร้างเครื่อง EC2 สำหรับทดสอบ (ในแลปนี้เป็น Windows Server ที่เชื่อมต่อด้วย RDP ได้ ใช้ m7i-flex.large, Key pair MyKPuseast2, '
+                 'Security group MySGuseast2 เหมือน Part 1 หัวข้อที่ 3 ภาพหน้าตั้งค่าไม่ได้บันทึกไว้) '
+                 'จด **Instance ID** ไว้ (ในแลปนี้คือ **i-0a5e590df3ec102c8**) แท็บ Monitoring ของเครื่องใหม่จะยังแสดง **No data available** '
+                 'ต้องรอสักครู่ให้ CloudWatch เก็บข้อมูล'))
+add(IMG(photo('55'), 'รูปที่ 15.2 เครื่อง EC2 ที่จะติดตาม'))
+add(STEP('15.3', 'ไปที่ CloudWatch → **Metrics** → **Classic metrics** แท็บ **Browse** เลือก **EC2** → **Per-Instance Metrics** '
+                 'แล้ววาง Instance ID ในช่องค้นหา จะพบ metric ของเครื่องนี้ 18 รายการ ติ๊ก **CPUUtilization** '
+                 'กราฟด้านบนจะแสดงการใช้ CPU เป็นเปอร์เซ็นต์ ปรับช่วงเวลาได้ที่ 1h / 3h / 12h / 1d ...'))
+add(IMG(photo('56'), 'รูปที่ 15.3 ค้นหา metric ด้วย Instance ID'))
+add(TABLE(['Metric', 'ความหมาย'],
+          [['CPUUtilization', 'เปอร์เซ็นต์การใช้ CPU'],
+           ['NetworkIn / NetworkOut', 'จำนวน byte ที่รับเข้า / ส่งออกทางเครือข่าย'],
+           ['NetworkPacketsIn / NetworkPacketsOut', 'จำนวน packet ที่รับเข้า / ส่งออก'],
+           ['EBSReadBytes / EBSWriteBytes', 'จำนวน byte ที่อ่าน / เขียนดิสก์ EBS'],
+           ['StatusCheckFailed', 'ผลตรวจสุขภาพเครื่อง (0 = ปกติ, 1 = มีปัญหา)']],
+          [3600, 5400]))
+add(STEP('15.4', 'ติ๊กหลาย metric พร้อมกันได้ ในแลปนี้เลือก **CPUUtilization, NetworkIn และ NetworkOut** (แท็บ Graphed metrics (3)) '
+                 'แล้วเปลี่ยนรูปแบบการแสดงผลจาก **Line** เป็น **Gauge** ที่มุมขวาบน จะเห็นค่าล่าสุด เช่น CPU **2.78%**, '
+                 'NetworkIn **637 byte**, NetworkOut **526 byte** ในรูปนี้ยังเปิด RDP เข้าเครื่องและเปิดหน้าเว็บที่มีภาพเคลื่อนไหว '
+                 'เพื่อให้เครื่องมีการใช้ CPU และเครือข่าย'))
+add(IMG(photo('57'), 'รูปที่ 15.4 แสดงหลาย metric แบบ Gauge'))
+add(BOX('**ข้อความสีแดง "You have to set the gauge range":** กราฟแบบ Gauge ต้องกำหนดค่าต่ำสุด-สูงสุดของหน้าปัด '
+        'ที่แท็บ **Options** (เช่น CPU 0–100) ถ้าไม่ตั้ง หน้าปัดจะแสดงตัวเลขอย่างเดียว'))
+
+add(SUB('ส่วน B: สร้าง Alarm ที่ส่งอีเมลแจ้งเตือน'))
+add(STEP('15.5', 'ไปที่ CloudWatch → **Alarms** (ตอนนี้ Alarms (0)) แล้วคลิก **Create alarm**'))
+add(IMG(photo('58'), 'รูปที่ 15.5 หน้า Alarms'))
+add(STEP('15.6', 'คลิก **Select metric** → **EC2** → **Per-Instance Metrics** ค้นหาด้วย Instance ID '
+                 '(i-0a5e590df3ec102c8) ติ๊ก **CPUUtilization** แล้วคลิก **Select metric**'))
+add(IMG(photo('59'), 'รูปที่ 15.6 เลือก metric CPUUtilization'))
+add(STEP('15.7', 'Step 1 **Specify metric and conditions** ตั้งค่าดังนี้ แล้วคลิก **Next**'))
+add(BUL('Data source: **Metrics**, Type: **Classic**'))
+add(BUL('Metric: Namespace **AWS/EC2**, Metric name **CPUUtilization**, InstanceId **i-0a5e590df3ec102c8**'))
+add(BUL('Statistic: **Average**, Period: **5 minutes**'))
+add(BUL('Threshold type: **Static** (ใช้ตัวเลขคงที่)'))
+add(BUL('Whenever CPUUtilization is: **Greater (> threshold)** than **0.1**'))
+add(BUL('Additional configuration: Datapoints to alarm **1 out of 1**, Missing data treatment **Treat missing data as missing**'))
+add(P('ความหมาย: ถ้าค่าเฉลี่ย CPU ในช่วง 5 นาทีใดๆ มากกว่า 0.1% เพียง 1 ครั้ง Alarm จะเข้าสถานะ **ALARM** '
+      '(ในกราฟ Preview คือเมื่อเส้นสีน้ำเงินสูงกว่าเส้นสีแดง)'))
+add(IMG(photo('60'), 'รูปที่ 15.7 ตั้งเงื่อนไข CPUUtilization > 0.1'))
+add(BOX('**ค่า 0.1% ใช้ทดสอบเท่านั้น:** ตั้งต่ำมากเพื่อให้ Alarm ทำงานทันทีและเห็นอีเมลแจ้งเตือน '
+        'ในการใช้งานจริงควรตั้งประมาณ **80%** และใช้ Datapoints เช่น 3 out of 3 เพื่อไม่ให้แจ้งเตือนจากการใช้ CPU สูงเพียงชั่วครู่'))
+add(STEP('15.8', 'Step 2 **Configure actions** ส่วน Notification ตั้งค่าดังนี้ แล้วคลิก **Next**'))
+add(BUL('Alarm state trigger: **In alarm** (แจ้งเตือนเมื่อเข้าสถานะ ALARM)'))
+add(BUL('Send a notification to the following SNS topic: ครั้งแรกเลือก **Create new topic** ตั้งชื่อ **Web_Server_Overloading** '
+        'ใส่ **อีเมลของเรา** ในช่อง Email endpoints แล้วคลิก **Create topic** '
+        '(ในรูปสร้างไว้แล้ว จึงแสดงเป็น Select an existing SNS topic → Web_Server_Overloading)'))
+add(BUL('Lambda action, Auto Scaling action, EC2 action และ Systems Manager action: ไม่ต้องใช้'))
+add(IMG(photo('61'), 'รูปที่ 15.8 ตั้งค่า Notification ไปยัง SNS topic'))
+add(STEP('15.9', 'เปิดอีเมลของเรา จะได้รับอีเมล **AWS Notification - Subscription Confirmation** จาก no-reply@sns.amazonaws.com '
+                 'แจ้งว่าเราสมัครรับข่าวจาก topic arn:aws:sns:us-east-1:...:Web_Server_Overloading ให้คลิก **Confirm subscription**'))
+add(IMG(photo('62'), 'รูปที่ 15.9 อีเมลยืนยันการสมัครรับการแจ้งเตือน'))
+add(STEP('15.10', 'จะเปิดหน้า **Subscription confirmed!** แปลว่ายืนยันสำเร็จ ต่อจากนี้อีเมลนี้จะได้รับการแจ้งเตือนจาก topic'))
+add(IMG(photo('63'), 'รูปที่ 15.10 ยืนยันการสมัครสำเร็จ'))
+add(BOX('**ต้องยืนยันอีเมลก่อน:** ถ้าไม่คลิก Confirm subscription สถานะ subscription จะเป็น Pending confirmation '
+        'และจะ**ไม่ได้รับอีเมลแจ้งเตือน** ถ้าไม่เห็นอีเมลให้ดูในโฟลเดอร์ Spam หรือ Promotions'))
+add(STEP('15.11', 'Step 3 **Add alarm details** ตั้ง Alarm name = **myAlarm** (Alarm description ไม่บังคับ) แล้วคลิก **Next**'))
+add(IMG(photo('64'), 'รูปที่ 15.11 ตั้งชื่อ myAlarm'))
+add(STEP('15.12', 'Step 4 **Preview and create** ตรวจสอบเงื่อนไข (CPUUtilization Greater (>) than 0.1) Action '
+                  '(When In alarm, send a notification to "Web_Server_Overloading") และชื่อ myAlarm แล้วคลิก **Create alarm**'))
+add(IMG(photo('65'), 'รูปที่ 15.12 ตรวจสอบแล้ว Create alarm'))
+add(STEP('15.13', 'Alarm จะเริ่มที่สถานะ **Insufficient data** (ยังมีข้อมูลไม่พอ) เมื่อ CPU เกิน 0.1% จะเปลี่ยนเป็น **In alarm** '
+                  'และส่งอีเมลหัวข้อ **ALARM: "myAlarm" in US East (N. Virginia)** ซึ่งบอกรายละเอียด เช่น'))
+add(BUL('State Change: **INSUFFICIENT_DATA → ALARM**'))
+add(BUL('Reason: Threshold Crossed: 1 out of the last 1 datapoints **[59.52...]** was greater than the threshold **(0.1)** '
+        '(CPU เฉลี่ยขณะนั้นประมาณ 59.5%)'))
+add(BUL('Monitored Metric: AWS/EC2 CPUUtilization ของ InstanceId i-0a5e590df3ec102c8, Period 300 seconds, Average'))
+add(IMG(photo('66'), 'รูปที่ 15.13 อีเมลแจ้งเตือนเมื่อ Alarm ทำงาน'))
+add(BOX('**สถานะของ Alarm มี 3 แบบ:** **OK** (อยู่ในเกณฑ์), **In alarm** (เกินเกณฑ์) และ **Insufficient data** (ข้อมูลไม่พอ) '
+        'ในขั้นตอนที่ 15.8 เลือกแจ้งเตือนเฉพาะ In alarm ถ้าต้องการรู้ด้วยว่าระบบกลับมาปกติ ให้คลิก Add notification เพิ่ม trigger **OK**'))
+
+add(SUB('ส่วน C: สร้าง Dashboard'))
+add(STEP('15.14', 'ไปที่ CloudWatch → **Dashboards** แท็บ **Custom Dashboards** (ตอนนี้ยังไม่มี) แล้วคลิก **Create dashboard** '
+                  '(สังเกตว่าเมนู Alarms ด้านซ้ายแสดง ⚠ 1 คือมี 1 alarm อยู่ในสถานะ In alarm)'))
+add(IMG(photo('67'), 'รูปที่ 15.14 หน้า Custom Dashboards'))
+add(STEP('15.15', 'ตั้ง Dashboard name = **SOC** (ใช้ได้เฉพาะ 0-9 A-Z a-z - _) แล้วคลิก **Create dashboard**'))
+add(IMG(photo('68'), 'รูปที่ 15.15 ตั้งชื่อ Dashboard'))
+add(STEP('15.16', 'หน้าต่าง **Add widget** จะเปิดขึ้น เลือก Data sources types **Cloudwatch**, Data type **Metrics**, '
+                  'Preferred experience **Metrics Console** และ Widget type ตามต้องการ (เช่น **Line** สำหรับกราฟตามเวลา, '
+                  '**Number** สำหรับค่าล่าสุด, **Gauge** สำหรับหน้าปัด) แล้วคลิก **Next**'))
+add(IMG(photo('69'), 'รูปที่ 15.16 เลือกชนิด widget'))
+add(STEP('15.17', 'หน้า **Add metric graph** ค้นหาด้วย Instance ID ใน EC2 → Per-Instance Metrics ติ๊ก metric ที่ต้องการ (เช่น **CPUUtilization**) '
+                  'แล้วคลิก **Create widget** ทำซ้ำด้วยปุ่ม **+** มุมขวาบนเพื่อเพิ่ม widget อื่น'))
+add(IMG(photo('70'), 'รูปที่ 15.17 เลือก metric สำหรับ widget'))
+add(STEP('15.18', 'Dashboard **SOC** ในแลปนี้มี 3 widget คือ **CPUUtilization** (Line), **NetworkIn** และ **NetworkOut** (Number) '
+                  'แล้ว**คลิก Save** ที่มุมขวาบน'))
+add(IMG(photo('71'), 'รูปที่ 15.18 ตัวอย่าง Dashboard SOC'))
+add(BOX('**อย่าลืมกด Save:** มุมขวาบนแสดง **Autosave: Off** ถ้าไม่กด Save แล้วออกจากหน้า widget ที่เพิ่มจะหายทั้งหมด'))
+
+add(SUB('ส่วน D: คืนทรัพยากร (Clean up)'))
+add(STEP('15.19', 'เมื่อทำเสร็จ ให้ลบทรัพยากรเพื่อไม่ให้เสีย credit และไม่ได้รับอีเมลแจ้งเตือนต่อ', keep_next=False))
+add(BUL('CloudWatch → Alarms → myAlarm → Actions → **Delete**'))
+add(BUL('CloudWatch → Dashboards → SOC → **Delete**'))
+add(BUL('Amazon SNS → Topics → Web_Server_Overloading → **Delete** (หรือคลิกลิงก์ unsubscribe ท้ายอีเมลแจ้งเตือน)'))
+add(BUL('EC2 → Terminate เครื่อง i-0a5e590df3ec102c8'))
 
 # ---------- Summary ----------
 add(H('สรุป Part 5'))
@@ -346,7 +461,11 @@ add(TABLE(['รายการ', 'ค่าที่ใช้', 'หมายเ
            ['ASG (หัวข้อ 14)', 'myASG', 'Desired 1, Min 1, Max 2, us-east-1a + us-east-1b, myTG, grace period 60 s'],
            ['Scaling policy', 'Target Tracking Policy', 'Average CPU utilization, Target 1 (ทดสอบ), warmup 5 s'],
            ['Webserver1', 'i-097212955ba2fc5a5', 'us-east-1b, 44.202.88.112'],
-           ['Webserver2', 'i-0c97d06ae90036366', 'us-east-1a, 100.48.217.55 (สร้างตอน Scale out)']],
+           ['Webserver2', 'i-0c97d06ae90036366', 'us-east-1a, 100.48.217.55 (สร้างตอน Scale out)'],
+           ['เครื่องที่ติดตาม (หัวข้อ 15)', 'i-0a5e590df3ec102c8', 'm7i-flex.large, us-east-1c, 174.129.187.183'],
+           ['SNS topic', 'Web_Server_Overloading', 'Email subscription ที่ยืนยันแล้ว'],
+           ['CloudWatch alarm', 'myAlarm', 'CPUUtilization Average 5 นาที > 0.1 (1 out of 1) → แจ้งเตือนเมื่อ In alarm'],
+           ['CloudWatch dashboard', 'SOC', 'CPUUtilization (Line), NetworkIn, NetworkOut (Number)']],
           [2600, 3200, 3200]))
 add(SUB('สิ่งที่ควรจำจาก Part 5'))
 add(BUL('Auto Scaling group รักษาจำนวนเครื่องให้เท่ากับ Desired capacity เสมอ ถ้าเครื่องถูกลบหรือเสีย จะสร้างเครื่องใหม่แทน'))
@@ -356,6 +475,10 @@ add(BUL('ASG ที่ผูกกับ Target group จะลงทะเบ�
 add(BUL('Target tracking policy ใช้ CloudWatch alarm ตรวจ metric (เช่น CPU) แล้วปรับ Desired capacity ภายในช่วง Min–Max'))
 add(BUL('ค่าที่ใช้ทดสอบ (Target 1%, warmup 5 วินาที) ไม่เหมาะกับงานจริง ควรใช้ประมาณ 70–80% และ warmup ประมาณ 300 วินาที'))
 add(BUL('ลบเครื่องของ ASG ต้องลบที่ ASG ไม่ใช่ Terminate เครื่องโดยตรง'))
+add(BUL('CloudWatch เก็บ metric ของ EC2 ให้อัตโนมัติ (CPU, Network, EBS, Status check) ค้นหาได้ด้วย Instance ID'))
+add(BUL('Alarm ส่งอีเมลผ่าน SNS topic และต้องคลิก Confirm subscription ในอีเมลก่อนจึงจะได้รับการแจ้งเตือน'))
+add(BUL('Alarm มี 3 สถานะ OK / In alarm / Insufficient data และค่าทดสอบ (> 0.1%) ควรเปลี่ยนเป็นประมาณ 80% ในงานจริง'))
+add(BUL('Dashboard รวมกราฟหลาย metric ไว้ในหน้าเดียว และต้องกด Save เพราะ Autosave ปิดอยู่'))
 add(PAGEBREAK())
 
 splice_part(UN, 5, ''.join(X), IMG)
